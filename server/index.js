@@ -7,7 +7,7 @@ var server = require('http').createServer()
   , port = 4080;
 
 var utils = require('./utils')
-
+//well, what is this ordering??? hello???
 //MAIN.JS
 var connections = {}
 var players = {};
@@ -17,11 +17,17 @@ var dead = [];
 
 var width = 800;
 var height = 600;
+var n = 0;
+
 
 setInterval(() => {
+  let start = Date.now();
   moveSnakes();
   checkCollisions();
   sendState();
+  let dt = Date.now() - start;
+  if ((n = n+1&63) === 0)
+    console.log(dt + "ms");
 }, 25)
 
 setInterval(() => {
@@ -64,10 +70,9 @@ function moveSnakes() {
     else if (player.dir == 3) {
       x = 1;
     }
-
     var head = player.pos[0]
     player.pos.unshift([head[0] + x, head[1] + y])
-    player.pos.pop();
+    //player.pos.pop();
 
     // Need to communicate to client that their snake has moved and grown/shrunk
   });
@@ -111,10 +116,13 @@ function squaredDistance([x1, y1], [x2, y2]) {
 
 //PER CONNECTION
 wss.on('connection', function connection(ws) {
-
   var myid = nextid++;
 
-  //we have the player in scope when we get a message
+  function cleanup() {
+    delete players[myid];
+    delete connections[myid];
+  }
+
   var player = {
     id: myid,
     pos: [[400,400], [300, 300]],
@@ -123,39 +131,29 @@ wss.on('connection', function connection(ws) {
     radius: 3,
   }
 
-  function cleanup() {
-    delete players[myid];
-    delete connections[myid];
-  }
-
-  players[myid] = player;
-  connections[myid] = {
+  var connection = {
     send(msg) {
-      ws.send(msg, err => {
-        if (err) {
-          cleanup()
-        }
-      })
+      ws.send(msg, err => err && cleanup())
     }
   }
 
-  var location = url.parse(ws.upgradeReq.url, true);
-  // you might use location.query.access_token to authenticate or share sessions
-  // or ws.upgradeReq.headers.cookie (see http://stackoverflow.com/a/16395220/151312)
-
+  players[myid] = player;
+  connections[myid] = connection
+  connection.send(JSON.stringify(myid))
 
   //when we connect... we make a function + bind it as the handler for that websocket
   ws.on('message', function incoming(message) {
     var dir = parseInt(message);
+    console.log(dir);
 
     //TODO: Convert this to some nice structure to not utilize magic numbers.
     if (dir > 3 || dir < 0) {
       // PLEASE STOP CHEATING.
     }
 
-    player.direction = dir;
+    player.dir = dir;
 
-    Object.keys(players).map(k => players[k]).filter(x => x !== player).forEach(x => x.ws.send());
+    //Object.keys(players).map(k => players[k]).filter(x => x !== player).forEach(x => x.ws.send());
   });
 
   ws.on('close', function () {

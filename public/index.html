@@ -18,67 +18,6 @@
 <body>
   <div id="root"></div>
   <canvas id="screen" width="800" height="600"/>
-  <script>
-    const PI = Math.PI
-    var ws = new WebSocket("ws://" + location.host + "/ws")
-    ws.onmessage = onmsg;
-    var screen = document.getElementById("screen")
-    var ctx = screen.getContext("2d")
-    ctx.fillStyle="gainsboro"
-    ctx.fillRect(0, 0, 800, 600)
-    const mouse = {x:400, y:300}
-    screen.onmousemove = e => {
-      mouse.x = e.layerX
-      mouse.y = e.layerY
-    }
-
-    document.onkeydown = e => console.log(e)
-    let heading = 0
-
-    function keydown({key}) {
-      switch(key) {
-        case 'ArrowUp':
-          ws.send(0);
-        case 'ArrowLeft':
-          ws.send(1);
-        case 'ArrowDown':
-          ws.send(2);
-        case 'ArrowRight':
-          ws.send(3);
-
-      }
-    }
-
-    var prevstate = {}
-    var nextstate = {}
-
-    function onmsg({data}) {
-      nextstate = JSON.parse(data)
-
-    }
-
-    function render() {
-      requestAnimationFrame(render)
-      ctx.fillStyle="gainsboro"
-      ctx.fillRect(0, 0, 800, 600)
-      ctx.fillStyle="cornflowerblue"
-      Object.keys(nextstate)
-        .map(k => nextstate[k])
-        .forEach(player => {
-          let pos = player.pos;
-          pos.forEach(([x,y]) => {
-            console.log(x,y);
-            ctx.fillRect(x-2, y-2, 4, 4);
-          })
-
-        })
-
-
-    }
-
-    requestAnimationFrame(render)
-
-
-  </script>
+  <script src="/veno.js"></script>
 </body>
 </html>
