@@ -6,13 +6,13 @@ var server = require('http').createServer()
   , app = express()
   , port = 4080;
 
-var utils = require('./utils')
 //well, what is this ordering??? hello???
 //MAIN.JS
-var connections = {}
-var players = {};
+var _connections = {}
+var _players = {};
 var nextid = 0;
-var food = {};
+var nextfood = 0;
+var _food = {};
 var dead = [];
 
 var width = 800;
@@ -22,9 +22,11 @@ var n = 0;
 
 setInterval(() => {
   let start = Date.now();
+  const diff = []
+  addFood(diff);
   moveSnakes();
-  checkCollisions();
-  sendState();
+  checkCollisions(diff);
+  sendState(diff);
   let dt = Date.now() - start;
   if ((n = n+1&63) === 0)
     console.log(dt + "ms");
@@ -34,14 +36,20 @@ setInterval(() => {
   addFood();
 }, 1000)
 
-function addFood() {
-  if (food.length <= 90) {
-    var toAdd = 100 - food.length;
+function addFood(diff) {
+  const len = Object.keys(_food).length
+  if (len <= 90) {
+    var toAdd = 100 - len;
     for(var i = 0; i < toAdd; i++) {
+      var id = nextfood++;
       var foodWPX = Math.floor(Math.random() * (width - (width * .2)));
       var foodHPX = Math.floor(Math.random() * (height - (height * .2)));
-
-      food.add([foodWPX, foodHPX]);
+      const pos = [foodWPX, foodHPX]
+      _food[id] = pos
+      diff.push({
+        id,
+        pos,
+      })
     }
 
     //TODO: After done adding all food to the field, need to inform the client where the new food has been added.
@@ -52,17 +60,17 @@ function addFood() {
 }
 
 function moveSnakes() {
-  Object.keys(players).map(key => players[key]).forEach(player => {
+  Object.keys(_players).map(key => _players[key]).forEach(player => {
     var x = 0;
     var y = 0;
 
     // If we are going up or down, we are only changing direction in the Y Plane, else we change direction in the X Plane.
     if (player.dir == 0)
     {
-      y = 1;
+      y = -1;
     }
     else if (player.dir == 2) {
-      y = -1;
+      y = 1;
     }
     else if (player.dir == 1) {
       x = -1;
@@ -78,33 +86,50 @@ function moveSnakes() {
   });
 }
 
-function checkCollisions() {
-  var p = Object.keys(players).map(k => players[k])
-  for (var i = 0; i < p.length; i++) {
-    var first = p[i];
-    var head = first.pos[0];
-    for (var j = 0; j < p.length; j++) {
-      if (i == j) continue
+function checkCollisions(diff) {
+  const players = Object.keys(_players).map(k => _players[k])
 
-      var other = p[j]
-      var tail = other.pos
-      for (var k = 0; k < tail.length; k++) {
-        var r = first.radius + other.radius;
+  for (let i = 0; i < players.length; i++) {
+    const player = players[i];
+    const head = player.pos[0];
+    for (let j = 0; j < players.length; j++) {
+      if (i == j)
+        continue
+
+      const other = players[j]
+      const tail = other.pos
+      for (let k = 0; k < tail.length; k++) {
+        const r = player.radius + other.radius;
         if (squaredDistance(head, tail[k]) < r*r) {
-          dead.push(first)
+          dead.push(player)
           continue;
         }
       }
     }
+
+    Object.keys(_food).forEach(id => {
+      const r = player.radius + 2
+      if (squaredDistance(head, _food[id]) < r*r) {
+        player.mass++
+        delete _food[id]
+        diff.push({
+          id,
+          pos: false,
+        })
+      }
+    })
   }
 }
 
-function sendState() {
-  var json = JSON.stringify(players);
-  Object.keys(connections).map(k => connections[k]).forEach(x => {
-    x.send(json);
-  })
+function sendState(diff) {
+  var json = JSON.stringify({
+    players: _players,
+    diff,
+  });
 
+  Object.keys(_connections)
+    .map(k => _connections[k])
+    .forEach(x => x.send(json))
 }
 
 function squaredDistance([x1, y1], [x2, y2]) {
@@ -116,11 +141,11 @@ function squaredDistance([x1, y1], [x2, y2]) {
 
 //PER CONNECTION
 wss.on('connection', function connection(ws) {
-  var myid = nextid++;
+  var myid = ++nextid;
 
   function cleanup() {
-    delete players[myid];
-    delete connections[myid];
+    delete _players[myid];
+    delete _connections[myid];
   }
 
   var player = {
@@ -129,6 +154,7 @@ wss.on('connection', function connection(ws) {
     len: 2,
     dir: 1,
     radius: 3,
+    mass: 1,
   }
 
   var connection = {
@@ -137,15 +163,17 @@ wss.on('connection', function connection(ws) {
     }
   }
 
-  players[myid] = player;
-  connections[myid] = connection
-  connection.send(JSON.stringify(myid))
+  _players[myid] = player;
+  _connections[myid] = connection
+  connection.send(JSON.stringify({
+    id: myid,
+    state: _players,
+    food: _food,
+  }))
 
   //when we connect... we make a function + bind it as the handler for that websocket
   ws.on('message', function incoming(message) {
     var dir = parseInt(message);
-    console.log(dir);
-
     //TODO: Convert this to some nice structure to not utilize magic numbers.
     if (dir > 3 || dir < 0) {
       // PLEASE STOP CHEATING.

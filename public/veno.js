@@ -39,14 +39,28 @@ function keydown(e) {
 
 var prevstate = {}
 var nextstate = {}
+var _food = {}
 let myid;
 
 function onmsg({data}) {
   if (myid) {
-    nextstate = JSON.parse(data)
+    const { players, diff } = JSON.parse(data)
+    nextstate = players
+
+    diff.forEach(({id, pos}) => {
+      if (pos) {
+        _food[id] = pos
+      } else {
+        delete _food[id]
+      }
+    })
+
   } else {
-    console.log("you are player id", data)
-    myid = data;
+    const { id, state, food } = JSON.parse(data)
+    console.log(id, state, food)
+    myid = id;
+    _food = food;
+    nextstate = state;
   }
 }
 
@@ -74,6 +88,19 @@ function render() {
       })
 
     })
+
+    ctx.fillStyle="crimson"
+    Object.keys(_food)
+      .map(k => _food[k])
+      .forEach(([x, y]) => {
+        if (x < left || x > right || y < top || y > bottom)
+          return
+        let radius = 2
+        const worldX = x - headx + HWIDTH
+        const worldY = y - heady + HHEIGHT
+        ctx.fillRect(worldX-radius, worldY-radius, radius*2, radius*2);
+      })
+
 
 
 }
