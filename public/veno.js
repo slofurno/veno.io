@@ -1,5 +1,6 @@
 const HWIDTH = 400
 const HHEIGHT = 300
+const WIDTH = 4000;
 const PI = Math.PI
 var ws = new WebSocket("ws://" + location.host + "/ws")
 ws.onmessage = onmsg;
@@ -47,43 +48,47 @@ function onmsg({data}) {
     const { players, diff } = JSON.parse(data)
     nextstate = players
 
-    diff.forEach(({id, pos}) => {
-      if (pos) {
-        _food[id] = pos
+    diff.forEach(({index, alive}) => {
+      if (alive) {
+        _food[index] = [index%WIDTH, index/WIDTH|0]
       } else {
-        delete _food[id]
+        delete _food[index]
       }
     })
 
   } else {
     const { id, state, food } = JSON.parse(data)
-    console.log(id, state, food)
+    console.log(state)
+    console.log(food)
+    _food = {}
+
+    food.forEach(i => _food[i] = [i%WIDTH, i/WIDTH|0])
     myid = id;
-    _food = food;
     nextstate = state;
   }
 }
 
+let me;
 function render() {
   requestAnimationFrame(render)
-  const me = nextstate[myid];
-  if (!me)
-    return
+  me = nextstate[myid] ? nextstate[myid] : me
   const [headx, heady] = me.pos[0]
   const [left, top, right, bottom] = [headx - HWIDTH, heady - HHEIGHT, headx + HWIDTH, heady + HHEIGHT]
 
 
   ctx.fillStyle="gainsboro"
   ctx.fillRect(0, 0, 800, 600)
-  ctx.fillStyle="cornflowerblue"
+
   Object.keys(nextstate)
     .map(k => nextstate[k])
-    .forEach(({pos, radius}) => {
+    .forEach(({pos, radius, color}) => {
       pos.forEach(([x,y]) => {
         if (x < left || x > right || y < top || y > bottom)
           return
         const worldX = x - headx + HWIDTH
         const worldY = y - heady + HHEIGHT
+
+        ctx.fillStyle = color;
         ctx.fillRect(worldX-radius, worldY-radius, radius*2, radius*2);
       })
 

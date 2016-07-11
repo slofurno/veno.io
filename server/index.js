@@ -6,27 +6,36 @@ var server = require('http').createServer()
   , app = express()
   , port = 4080;
 
+const colors = require('./colors')
 //well, what is this ordering??? hello???
 //MAIN.JS
 var _connections = {}
 var _players = {};
+var _computers = {};
 var nextid = 0;
 var nextfood = 0;
 var _food = {};
-var dead = [];
+let _foodCount = 0;
 
+
+var dead = [];
+let diff = [];
+const WIDTH = 4000;
+
+const _foodBuffer = Buffer.alloc((WIDTH*WIDTH+7)/8);
+_foodBuffer.fill(0)
 var width = 800;
 var height = 600;
 var n = 0;
 
-
 setInterval(() => {
+  diff = [];
   let start = Date.now();
-  const diff = []
-  addFood(diff);
+  Object.keys(_computers).forEach(k => _computers[k].think())
+  addDeadSnake();
   moveSnakes();
-  checkCollisions(diff);
-  sendState(diff);
+  checkCollisions();
+  sendState();
   let dt = Date.now() - start;
   if ((n = n+1&63) === 0)
     console.log(dt + "ms");
@@ -36,80 +45,151 @@ setInterval(() => {
   addFood();
 }, 1000)
 
-function addFood(diff) {
-  const len = Object.keys(_food).length
-  if (len <= 90) {
-    var toAdd = 100 - len;
+
+
+function addFood() {
+  const len = _foodCount
+  if (len <= 50000) {
+    var toAdd = 50000 - len;
     for(var i = 0; i < toAdd; i++) {
+      _foodCount++;
       var id = nextfood++;
-      var foodWPX = Math.floor(Math.random() * (width - (width * .2)));
-      var foodHPX = Math.floor(Math.random() * (height - (height * .2)));
-      const pos = [foodWPX, foodHPX]
+      var foodX = Math.floor(Math.random() * (WIDTH - (WIDTH * .2)));
+      var foodY = Math.floor(Math.random() * (WIDTH - (WIDTH * .2)));
+      const pos = [foodX, foodY]
+
+      var fi = foodY * WIDTH + foodX
+      var offset = fi/8|0
+      var bit = fi & 7
+      _foodBuffer[offset]=_foodBuffer[offset]|1<<bit
+
+      diff.push({
+        index: fi,
+        alive: false,
+      })
+      /*
       _food[id] = pos
       diff.push({
         id,
         pos,
       })
+      */
     }
+  }
+}
 
-    //TODO: After done adding all food to the field, need to inform the client where the new food has been added.
+function addDeadSnake() {
+  if (dead.length > 0) {
+     dead.forEach(player => {
+       player.pos.forEach(pos => {
+         var fi = pos[1] * WIDTH + pos[0]
+         var offset = fi/8|0
+         var bit = fi&7
+         _foodCount++;
+         _foodBuffer[offset] ^= 1<<bit
+         //_food[id] = deadPos
+         diff.push({
+           index: fi,
+           alive: true,
+         })
+       })
+       delete _players[player.id];
+     })
   }
-  else {
-    return;
-  }
+
+  dead = [];
 }
 
 function moveSnakes() {
   Object.keys(_players).map(key => _players[key]).forEach(player => {
-    var x = 0;
-    var y = 0;
-
+    var head = player.pos[0]
+    var x = head[0];
+    var y = head[1];
     // If we are going up or down, we are only changing direction in the Y Plane, else we change direction in the X Plane.
     if (player.dir == 0)
     {
-      y = -1;
+      y -= 3;
     }
     else if (player.dir == 2) {
-      y = 1;
+      y += 3;
     }
     else if (player.dir == 1) {
-      x = -1;
+      x -= 3;
     }
     else if (player.dir == 3) {
-      x = 1;
+      x += 3;
     }
-    var head = player.pos[0]
-    player.pos.unshift([head[0] + x, head[1] + y])
-    //player.pos.pop();
+
+    if (x >= 0 && x < WIDTH && y >= 0 && y < WIDTH) {
+      player.pos.unshift([x, y])
+      if (player.pos.length > player.mass) {
+        player.pos.pop();
+      }
+    }
 
     // Need to communicate to client that their snake has moved and grown/shrunk
   });
 }
 
-function checkCollisions(diff) {
+const bbs = {}
+
+function checkCollisions() {
   const players = Object.keys(_players).map(k => _players[k])
 
-  for (let i = 0; i < players.length; i++) {
+  players.forEach(({pos}) => {
+    let xs = pos.map(([x,y]) => x)
+    let ys = pos.map(([x,y]) => y)
+  })
+
+  next: for (let i = 0; i < players.length; i++) {
     const player = players[i];
     const head = player.pos[0];
     for (let j = 0; j < players.length; j++) {
-      if (i == j)
-        continue
+    let k = i == j ? 8 : 0
 
       const other = players[j]
       const tail = other.pos
-      for (let k = 0; k < tail.length; k++) {
+   for (;k < tail.length; k++) {
         const r = player.radius + other.radius;
-        if (squaredDistance(head, tail[k]) < r*r) {
+        if (checkCollision(head, tail[k], 2)) {
           dead.push(player)
-          continue;
+          continue next;
         }
       }
     }
 
-    Object.keys(_food).forEach(id => {
+
+
+    for(let j = -2; j <= 2; j++) {
+      for(let i = -2; i <= 2; i++) {
+        var fi = (head[1] + j) * WIDTH + head[0] + i
+
+        var offset = fi/8|0
+        var bit = fi&7
+
+        if (_foodBuffer[offset] & 1<<bit) {
+          player.mass++
+          _foodCount--;
+          _foodBuffer[offset] ^= 1<<bit
+
+          diff.push({
+            index: fi,
+            alive: false,
+          })
+        }
+      }
+    }
+
+
+
+
+
+
+
+    /*
+  Object.keys(_food).forEach(id => {
       const r = player.radius + 2
-      if (squaredDistance(head, _food[id]) < r*r) {
+      if (checkCollision(head, _food[id], r)) {
         player.mass++
         delete _food[id]
         diff.push({
@@ -118,10 +198,11 @@ function checkCollisions(diff) {
         })
       }
     })
+    */
   }
 }
 
-function sendState(diff) {
+function sendState() {
   var json = JSON.stringify({
     players: _players,
     diff,
@@ -132,11 +213,50 @@ function sendState(diff) {
     .forEach(x => x.send(json))
 }
 
+function checkCollision([x1, y1], [x2, y2], r) {
+  if ((x1 - x2 > r) || (x1 - x2 < -r) || (y1 - y2 > r) || (y1 - y2 < -r)) {
+    return false
+  }
+  return true
+}
+
 function squaredDistance([x1, y1], [x2, y2]) {
+
   var dy = y2-y1
   var dx = x2-x1
 
   return dy*dy + dx*dx;
+}
+
+function randomInt(n) {
+  return Math.random() * n | 0
+
+}
+
+function makeFakePlayer() {
+  var myid = ++nextid;
+  var player = {
+    id: myid,
+    pos: [[randomInt(WIDTH),randomInt(WIDTH)], [randomInt(WIDTH), randomInt(WIDTH)]],
+    len: 2,
+    dir: 1,
+    radius: 3,
+    mass: 1,
+    color: colors[Math.floor(Math.random() * colors.length)]
+  }
+
+  player.think = () => {
+    if (Math.random() > 0.98) {
+      player.dir = (player.dir + 1) % 4
+    }
+  }
+
+  _players[myid] = player
+  _computers[myid] = player
+}
+
+for(var i = 0; i < 200; i++) {
+  makeFakePlayer();
 }
 
 //PER CONNECTION
@@ -155,33 +275,46 @@ wss.on('connection', function connection(ws) {
     dir: 1,
     radius: 3,
     mass: 1,
+    color: colors[Math.floor(Math.random() * colors.length)]
   }
 
-  var connection = {
+  const connection = {
     send(msg) {
       ws.send(msg, err => err && cleanup())
     }
   }
+
+  const food = []
+
+  for(var fi = 0; fi < WIDTH*WIDTH; fi++) {
+
+    var offset = fi/8|0
+    var bit = fi&7
+
+    if (_foodBuffer[offset] & 1<<bit) {
+      food.push(fi)
+    }
+  }
+
 
   _players[myid] = player;
   _connections[myid] = connection
   connection.send(JSON.stringify({
     id: myid,
     state: _players,
-    food: _food,
+    food,
   }))
 
   //when we connect... we make a function + bind it as the handler for that websocket
   ws.on('message', function incoming(message) {
     var dir = parseInt(message);
-    //TODO: Convert this to some nice structure to not utilize magic numbers.
-    if (dir > 3 || dir < 0) {
-      // PLEASE STOP CHEATING.
+
+    //We don't want the user to be able to do Left -> Right -> Left or they would go backwards onto themselves.
+    if (player.dir % 2 == dir % 2) {
+      return;
     }
 
     player.dir = dir;
-
-    //Object.keys(players).map(k => players[k]).filter(x => x !== player).forEach(x => x.ws.send());
   });
 
   ws.on('close', function () {
